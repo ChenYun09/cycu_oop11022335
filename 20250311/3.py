@@ -22,5 +22,5 @@ def read_and_sum_excel(file_path):
     plt.show()
 
 if __name__ == '__main__':
-    file_path = '活頁簿1.xlsx'  # 替換為你的 Excel 檔案路徑
+    file_path = '311.xlsx'  # 替換為你的 Excel 檔案路徑
     read_and_sum_excel(file_path)
