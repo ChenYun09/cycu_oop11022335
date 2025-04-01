@@ -1,52 +1,126 @@
-import os
+from requests_html import HTMLSession
+import requests
+import html
 import pandas as pd
 from bs4 import BeautifulSoup
 
-# 使用 os.path 處理路徑
-html_file = os.path.join(
-    r'c:/Users/User/Desktop/cycu_oop11022335/20250401',
-    '[忠孝幹線(公車雙向轉乘優惠)]公車動態資訊.html'
-)
+from playwright.sync_api import sync_playwright
 
-# 確保檔案存在
-if not os.path.exists(html_file):
-    raise FileNotFoundError(f"檔案不存在：{html_file}")
+def get_stop_info(stop_link: str) -> dict:
+    stop_id = stop_link.split("=")[1]
+    url = f'https://pda5284.gov.taipei/MQS/stoplocation.jsp?slid={stop_id}'
 
-# 讀取 HTML 檔案
-with open(html_file, 'r', encoding='utf-8') as file:
-    soup = BeautifulSoup(file, 'html.parser')
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url)
+        content = page.content()
+        with open(f"bus_stop_{stop_id}.html", "w", encoding="utf-8") as file:
+            file.write(content)
+        browser.close()
 
-# 初始化資料列表
-data = []
+    return {"stop_id": stop_id, "html_file": f"bus_stop_{stop_id}.html"}
 
-# 找到所有符合條件的 tr 標籤
-for tr in soup.find_all("tr", class_=["ttego1", "ttego2", "tteback1", "tteback2"]):
-    # 提取站點名稱
-    td_name = tr.find("td")
-    stop_name = td_name.text.strip() if td_name else "未知"
 
-    # 提取站點連結
-    stop_link = td_name.find("a")["href"] if td_name and td_name.find("a") else "無連結"
+def get_bus_route(rid):
+    """
+    Retrieve two DataFrames containing bus stop names and their corresponding URLs based on the route ID (rid).
 
-    # 提取到站時間
-    td_time = tr.find_all("td")[-1]  # 通常到站時間在最後一個 <td>
-    arrival_time = td_time.text.strip() if td_time else "未知"
+    Args:
+        rid (str): Bus route ID.
 
-    # 將資料加入列表
-    data.append({"站點名稱": stop_name, "連結": stop_link, "到站時間": arrival_time})
+    Returns:
+        tuple: Two Pandas DataFrames, each corresponding to one direction of the bus route.
 
-# 將資料轉換為 Pandas DataFrame
-df = pd.DataFrame(data)
+    Raises:
+        ValueError: If the webpage cannot be downloaded or if insufficient table data is found.
+    """
+    url = f'https://pda5284.gov.taipei/MQS/route.jsp?rid={rid}'
 
-# 顯示結果
-print(df)
+    # Send GET request
+    response = requests.get(url)
+    # write the response to a file route_{rid}.html
+    with open(f"bus_route_{rid}.html", "w", encoding="utf-8") as file:
+        file.write(response.text)
 
-# 確保輸出目錄存在
-output_dir = r'c:/Users/User/Desktop/cycu_oop11022335/20250401'
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
+    # Ensure the request is successful
+    if response.status_code == 200:
+        # Parse HTML using BeautifulSoup
+        soup = BeautifulSoup(response.text, "html.parser")
 
-# 儲存結果為 CSV 檔案
-output_file = os.path.join(output_dir, 'bus_dynamic_info.csv')
-df.to_csv(output_file, index=False, encoding='utf-8-sig')
-print(f"動態到站資訊已儲存至 {output_file}")
+        # Find all tables
+        tables = soup.find_all("table")
+
+        # Initialize DataFrame list
+        dataframes = []
+
+        # Iterate through tables
+        for table in tables:
+            # Find all tr tags with the specified classes
+            # find all go1 and go2
+            trs = table.find_all("tr", class_=["ttego1", "ttego2"])
+            if trs:
+                rows = []               
+                for tr in trs:
+                    # Extract stop name and link
+                    td = tr.find("td")
+                    if td:
+                        stop_name = html.unescape(td.text.strip())
+                        stop_link = td.find("a")["href"] if td.find("a") else None
+                        rows.append({"stop_name": stop_name, "stop_link": stop_link})
+                if rows:
+                    df = pd.DataFrame(rows)
+                    dataframes.append(df)                
+
+            # find all back1 and back2
+            trs = table.find_all("tr", class_=["tteback1", "tteback2"])
+            if trs:
+                rows = []               
+                for tr in trs:
+                    # Extract stop name and link
+                    td = tr.find("td")
+                    if td:
+                        stop_name = html.unescape(td.text.strip())
+                        stop_link = td.find("a")["href"] if td.find("a") else None
+                        rows.append({"stop_name": stop_name, "stop_link": stop_link})
+                if rows:
+                    df = pd.DataFrame(rows)
+                    dataframes.append(df)
+
+        # Return two DataFrames
+        if len(dataframes) >= 6:
+
+            go_dataframe = dataframes[0]
+            back_dataframe = dataframes[3]
+
+            for index, row in go_dataframe.iterrows():
+                stop_link = row['stop_link']
+                if stop_link:
+                    get_stop_info(stop_link)
+                    #print(f"get stop info from {stop_link}")
+
+            for index, row in back_dataframe.iterrows():
+                stop_link = row['stop_link']
+                if stop_link:
+                    get_stop_info(stop_link)
+                    #print(f"get stop info from {stop_link}")
+
+
+            return go_dataframe, back_dataframe
+        else:
+            print('length of dataframes:', len(dataframes))
+            raise ValueError("Insufficient table data found.")
+    else:
+        raise ValueError(f"Failed to download webpage. HTTP status code: {response.status_code}")
+
+# Test function
+if __name__ == "__main__":
+    rid = "10417"  # Test route ID
+    try:
+        df1, df2 = get_bus_route(rid)
+        print("First DataFrame:")
+        print(df1)
+        print("\nSecond DataFrame:")
+        print(df2)
+    except ValueError as e:
+        print(f"Error: {e}")
