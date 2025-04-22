@@ -1,13 +1,6 @@
 from playwright.sync_api import sync_playwright
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
 import time
-
-
-# 設定 matplotlib 使用標楷體
-rcParams['font.sans-serif'] = ['DFKai-SB']  # 標楷體的名稱
-rcParams['axes.unicode_minus'] = False  # 避免負號顯示問題
 
 
 def parse_direction(direction_div):
@@ -41,7 +34,6 @@ def scrape_bus_route(routeid="0100000A00"):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        page.set_extra_http_headers({"Content-Type": "text/html; charset=utf-8"})
         url = f"https://ebus.gov.taipei/Route/StopsOfRoute?routeid={routeid}"
         page.goto(url)
         page.wait_for_selector("#GoDirectionRoute")
